@@ -8,18 +8,18 @@
 
 Serious Illness Conversations are among the most emotionally demanding moments in clinical practice. ERICA gives healthcare professionals a safe, private space to rehearse these conversations before they happen in real life.
 
-Users describe their patient's situation, and ERICA responds as a simulated patient — drawing on a curated library of real clinical case studies to reflect authentic emotional states, fears, and communication patterns. Built-in reference frameworks (SPIKES, NURSE, SIC Guide) are available at any point during the conversation.
+Users are able to describe their patient's situation, and ERICA responds as a simulated patient. The AI draws on a curated library of real clinical case studies to reflect authentic emotional states, fears, and communication patterns. Built-in reference frameworks (SPIKES, NURSE, SIC Guide) are available at any point during the conversation, conveniently placed within the user chat interface.
 
 ---
 
 ## Features
 
-- **Scenario-driven sessions** — Users describe their specific situation before the chat begins, priming ERICA with relevant context.
-- **RAG-powered responses** — ERICA retrieves the most semantically similar case from a ChromaDB vector store to ground each session in realistic patient behaviour.
-- **Patient Profile panel** — Displays a structured snapshot of the matched case (emotions, cognitive state, underlying needs) to guide the practitioner's approach.
-- **Conversational frameworks** — SPIKES, NURSE, and SIC Guide available as in-session reference tabs.
-- **Session isolation** — Each conversation is stateless and independent, with a rolling chat history window to maintain coherent dialogue.
-- **Warm, considered UI** — Designed with accessibility and emotional sensitivity in mind.
+- **Scenario-driven Sessions** — Users describe their specific situation before the chat begins, priming ERICA with relevant context.
+- **RAG-powered Responses** — ERICA retrieves the most semantically similar case from a ChromaDB vector store to ground each session in realistic patient behaviour.
+- **Patient Profile Panel** — Displays a structured snapshot of the matched case (emotions, cognitive state, underlying needs) to guide the practitioner's approach.
+- **Conversational Frameworks** — SPIKES, NURSE, and SIC Guide available as in-session reference tabs.
+- **Session Isolation** — Each conversation is stateless and independent, with a rolling chat history window to maintain coherent dialogue.
+- **Comfortable UI** — Designed with accessibility and emotional sensitivity in mind.
 
 ---
 
@@ -39,11 +39,11 @@ Users describe their patient's situation, and ERICA responds as a simulated pati
 ## How It Works
 
 ```
-User inputs scenario
+The user inputs a scenario that they will like to practice
         ↓
-ChromaDB retrieves most similar case study
+The AI searches through ChromaDB for the most similar case examples
         ↓
-Case used to prime ERICA's system prompt + build Patient Profile
+Case used to prime ERICA's system prompt + build Patient Profile based on most similar case
         ↓
 User practises the conversation with ERICA
         ↓
@@ -59,6 +59,7 @@ Frameworks (SPIKES / NURSE / SIC) available for reference throughout
 - Python 3.9+
 - [Ollama](https://ollama.com/) installed locally (for case enrichment)
 - Anthropic API key
+- Gemini API key
 - ChromaDB
 
 ### Setup
