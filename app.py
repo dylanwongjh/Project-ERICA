@@ -25,7 +25,7 @@ except ImportError as e:
 
 app = Flask(__name__, static_folder = 'static', template_folder = 'templates') # set static and template folders
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
-CORS(app)  # Enable Cross-Origin Resource Sharing
+CORS(app)  # Enable Cross-Origin Resource Sharing 
 
 # Maximum number of conversation turns kept in memory per request.
 # Older turns are dropped to stay within the model's token budget.
@@ -276,7 +276,123 @@ class ERICA:
             return raw_text if raw_text else "I don't know... I just don't know what to think right now."
         except Exception as e:
             # Return a user-friendly error message
-            return f"Error: Failed to generate a response. Details: {e}"
+            err_str = str(e)
+            if '503' in err_str or 'UNAVAILABLE' in err_str or 'high demand' in err_str.lower():
+                return "I'm sorry, I'm a little overwhelmed right now… could you give me just a moment? Please try sending your message again."
+            if '429' in err_str or 'quota' in err_str.lower() or 'RESOURCE_EXHAUSTED' in err_str:
+                return "I need a brief pause — please try again in a few seconds."
+            print(f"[reply] unexpected error: {e}")
+            return "Something went wrong on my end. Please try sending that again."
+
+    def evaluate(self, chat_history, scenario):
+        # Build a reasonable transcript from the chat history
+        transcript_lines = []
+        for msg in chat_history:
+            speaker = "Nurse (Trainee)" if msg["role"] == "user" else "Patient (ERICA)"
+            transcript_lines.append(f"{speaker}: {msg['content']}")
+        transcript = "\n".join(transcript_lines)
+
+        eval_prompt = f"""You are an expert clinical communication trainer evaluating a Serious Illness Conversation (SIC) practice session.
+
+        Scenario: {scenario}
+
+        TRANSCRIPT:
+        {transcript}
+
+        Your task: Evaluate the user's performance. Return ONLY a valid JSON object, no markdown, no preamble, no trailing text.
+
+        The JSON must follow this exact structure:
+        {{
+            "overall_summary": "2-3 sentence narrative summary of the session. Acknowledge strengths first, then key areas for growth.",
+            "framework_checklist": {{
+                "SPIKES": [
+                {{"step": "Setting", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Perception", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Invitation", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Knowledge", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Empathy", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Strategy & Summary", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}}
+                ],
+                "NURSE": [
+                {{"step": "Name", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Understand", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Respect", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Support", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Explore", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}}
+                ],
+                "SIC": [
+                {{"step": "Ask for permission", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Assess understanding", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Share prognosis", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Explore what matters", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Explore fears", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}},
+                {{"step": "Align care with values", "demonstrated": <true if the user established a safe/private space, else false>, "note": "one-line evidence or suggestion"}}
+                ]
+            }},
+            "dimensions": [
+            {{
+                "name": "Empathic Language",
+                "score": <integer 1-5>,
+                "justification": "one sentence explaining the score"
+            }},
+            {{
+                "name": "Information Pacing",
+                "score": <integer 1-5>,
+                "justification": "one sentence explaining the score"
+            }},
+            {{
+                "name": "Emotional Acknowledgement",
+                "score": <integer 1-5>,
+                "justification": "one sentence explaining the score"
+            }}
+            ]
+        }}
+
+        Scoring guide for dimensions (1-5):
+        1 = Not demonstrated at all
+        2 = Briefly attempted but ineffective
+        3 = Adequately demonstrated
+        4 = Clearly and consistently demnonstrated
+        5 = Exemplary performance
+
+        Be fair, specific and constructive. Base all notes and justifications strictly on what appears in the transcript."""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.MODELS[1],
+                contents=[types.Content(role="user", parts=[types.Part.from_text(text=eval_prompt)])],
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    max_output_tokens=8192,
+                )
+            )
+            raw = (response.text or "").strip()
+            # Strip markdown code fences if present
+            raw = re.sub(r'^```(?:json)?\s*', '', raw)
+            raw = re.sub(r'\s*```$', '', raw)
+
+            # Attempt clean parse first
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError as json_err:
+                print(f"[evaluate] JSON truncated at char {json_err.pos}, attempting repair...")
+                # Truncate to last valid position and close all open structures
+                truncated = raw[:json_err.pos].rstrip().rstrip(',')
+                # Count unclosed braces and brackets to close them
+                open_braces = truncated.count('{') - truncated.count('}')
+                open_brackets = truncated.count('[') - truncated.count(']')
+                closing = (']' * open_brackets) + ('}' * open_braces)
+                repaired = truncated + closing
+                try:
+                    result = json.loads(repaired)
+                    print(f"[evaluate] JSON repaired successfully.")
+                    return result
+                except Exception as repair_err:
+                    print(f"[evaluate] repair failed: {repair_err}")
+                    return None
+        except Exception as e:
+            print(f"[evaluate] error: {e}")
+            return None
 
     def retrieve_cases(self, scenario, top_k=2):
         if self.case_collection is None:
@@ -355,6 +471,24 @@ def get_profile():
         print(f"[profile] error: {e}")
         return jsonify({'profile': None})
 
+@app.route('/api/evaluate', methods=['POST'])
+def evaluate():
+    try:
+        data = request.json
+        chat_history = data.get('chat_history', [])
+        scenario = data.get('scenario', session.get('current_scenario', ''))
+
+        if len(chat_history) < 2:
+            return jsonify({'error': 'Conversation too short to evaluate.'}), 400
+
+        result = chatbot.evaluate(chat_history, scenario)
+        if result:
+            return jsonify({'evaluation': result})
+        else:
+            return jsonify({'error': 'Evaluation failed. Please try again.'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/test_rag')
 def test_rag():
     scenario = request.args.get('q', 'terminal cancer patient afraid of dying')
@@ -362,4 +496,4 @@ def test_rag():
     return jsonify({'retrieved': context})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5002)
